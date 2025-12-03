@@ -46,7 +46,7 @@ body {
     color: #ddd;
 }
 
-#tilt-counter {
+#level-counter {
     font-size: 18px;
     font-weight: bold;
     color: #667eea;
@@ -54,38 +54,28 @@ body {
     text-align: center;
 }
 
-#tilt-buttons {
-    display: flex;
-    justify-content: center;
-    margin: 15px 0;
-}
-
-.tilt-button {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.reset-button {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
     color: white;
     border: none;
-    padding: 12px 32px;
-    font-size: 16px;
+    padding: 10px 24px;
+    font-size: 14px;
     font-weight: bold;
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    width: 100%;
+    margin-top: 15px;
 }
 
-.tilt-button:hover {
+.reset-button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
 }
 
-.tilt-button:active {
+.reset-button:active {
     transform: translateY(0);
-}
-
-.tilt-button:disabled {
-    background: linear-gradient(135deg, #555 0%, #666 100%);
-    cursor: not-allowed;
-    box-shadow: none;
 }
 
 .hint {

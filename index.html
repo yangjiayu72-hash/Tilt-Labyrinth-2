@@ -9,13 +9,11 @@
 <body>
     <div id="container"></div>
     <div id="instructions">
-        <h2>3D Tilt Labyrinth</h2>
-        <p>Click on the maze to tilt and guide the sphere to the center.</p>
-        <p id="tilt-counter">Tilts: 0 / 4</p>
-        <div id="tilt-buttons">
-            <button id="tilt-btn" class="tilt-button">TILT</button>
-        </div>
-        <p class="hint">The sphere will reach the center on the 4th tilt!</p>
+        <h2>3D Multi-Layer Maze</h2>
+        <p>Drag the mouse to tilt the maze and guide the ball.</p>
+        <p id="level-counter">Current Layer: 1 / 5</p>
+        <p class="hint">Navigate through holes to reach lower layers!</p>
+        <button id="reset-btn" class="reset-button">Reset</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

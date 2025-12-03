@@ -1,21 +1,24 @@
 // Main application setup
-let scene, camera, renderer, labyrinth, sphere, interactionHandler;
+let scene, camera, renderer, labyrinth, sphere;
 let animationId;
+let mouseDown = false;
+let previousMousePosition = { x: 0, y: 0 };
+
+// Maze tilt angles (in radians)
+let tiltX = 0; // Rotation around X axis (forward/backward tilt)
+let tiltZ = 0; // Rotation around Z axis (left/right tilt)
+const maxTilt = Math.PI / 6; // Maximum 30 degrees tilt
 
 function init() {
     // Create scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a1a);
-    scene.fog = new THREE.Fog(0x0a0a1a, 50, 200);
+    scene.fog = new THREE.Fog(0x0a0a1a, 100, 300);
 
-    // Create camera with 25° top-tilt angle
+    // Create camera
     const aspect = window.innerWidth / window.innerHeight;
     camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-
-    // Position camera for 25° top-tilt view
-    const distance = 80;
-    const angle = 25 * Math.PI / 180; // 25 degrees in radians
-    camera.position.set(0, distance * Math.sin(angle), distance * Math.cos(angle));
+    camera.position.set(0, 80, 80);
     camera.lookAt(0, 0, 0);
 
     // Create renderer
@@ -32,17 +35,17 @@ function init() {
     // Add lights
     setupLights();
 
-    // Create labyrinth
+    // Create multi-layer labyrinth
     labyrinth = new Labyrinth(scene);
 
-    // Create sphere at entrance
-    sphere = new Sphere(scene, labyrinth.getEntrancePosition());
+    // Create sphere at entrance of first layer
+    sphere = new Sphere(scene, labyrinth.getStartPosition(), labyrinth);
 
-    // Setup interaction handler
-    interactionHandler = new InteractionHandler(labyrinth, sphere, camera, scene);
+    // Setup mouse controls for tilting
+    setupTiltControls();
 
-    // Add orbit controls (locked at 25° tilt)
-    setupOrbitControls();
+    // Setup reset button
+    document.getElementById('reset-btn').addEventListener('click', resetGame);
 
     // Handle window resize
     window.addEventListener('resize', onWindowResize, false);
@@ -53,74 +56,114 @@ function init() {
 
 function setupLights() {
     // Ambient light for overall illumination
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
 
     // Main directional light from top
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(20, 50, 30);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    directionalLight.position.set(30, 80, 40);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
     directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.left = -60;
+    directionalLight.shadow.camera.right = 60;
+    directionalLight.shadow.camera.top = 60;
+    directionalLight.shadow.camera.bottom = -60;
     directionalLight.shadow.camera.near = 0.5;
-    directionalLight.shadow.camera.far = 500;
+    directionalLight.shadow.camera.far = 200;
     scene.add(directionalLight);
 
     // Fill light from the side
-    const fillLight = new THREE.DirectionalLight(0x6677ee, 0.3);
-    fillLight.position.set(-30, 20, -20);
+    const fillLight = new THREE.DirectionalLight(0x6677ee, 0.4);
+    fillLight.position.set(-40, 30, -30);
     scene.add(fillLight);
 
-    // Rim light for depth
-    const rimLight = new THREE.DirectionalLight(0xaa88ff, 0.2);
-    rimLight.position.set(0, -20, -40);
-    scene.add(rimLight);
-
-    // Point light for sphere highlight
-    const pointLight = new THREE.PointLight(0xffffff, 0.5, 100);
-    pointLight.position.set(0, 30, 0);
+    // Point light following the ball
+    const pointLight = new THREE.PointLight(0xffffff, 0.6, 50);
+    pointLight.position.set(0, 20, 0);
     scene.add(pointLight);
+
+    // Store reference for ball tracking
+    window.ballLight = pointLight;
 }
 
-function setupOrbitControls() {
-    // Note: OrbitControls requires separate import, but we'll use a simple manual control
-    // that maintains the 25° tilt angle
-
-    let isDragging = false;
-    let previousMousePosition = { x: 0, y: 0 };
-    let cameraAngle = 0;
-    const cameraDistance = 80;
-    const cameraTilt = 25 * Math.PI / 180; // Locked at 25°
-
+function setupTiltControls() {
     renderer.domElement.addEventListener('mousedown', (e) => {
-        if (e.target === renderer.domElement) {
-            isDragging = true;
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        }
+        mouseDown = true;
+        previousMousePosition = { x: e.clientX, y: e.clientY };
     });
 
     renderer.domElement.addEventListener('mousemove', (e) => {
-        if (isDragging) {
+        if (mouseDown) {
             const deltaX = e.clientX - previousMousePosition.x;
-            cameraAngle += deltaX * 0.005;
+            const deltaY = e.clientY - previousMousePosition.y;
 
-            // Update camera position maintaining 25° tilt
-            camera.position.x = cameraDistance * Math.sin(cameraAngle) * Math.cos(cameraTilt);
-            camera.position.y = cameraDistance * Math.sin(cameraTilt);
-            camera.position.z = cameraDistance * Math.cos(cameraAngle) * Math.cos(cameraTilt);
-            camera.lookAt(0, 0, 0);
+            // Update tilt angles based on mouse movement
+            // X movement tilts around Z axis (left/right)
+            // Y movement tilts around X axis (forward/backward)
+            tiltZ -= deltaX * 0.003;
+            tiltX += deltaY * 0.003;
+
+            // Clamp tilt angles
+            tiltX = Math.max(-maxTilt, Math.min(maxTilt, tiltX));
+            tiltZ = Math.max(-maxTilt, Math.min(maxTilt, tiltZ));
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
         }
     });
 
     renderer.domElement.addEventListener('mouseup', () => {
-        isDragging = false;
+        mouseDown = false;
     });
 
     renderer.domElement.addEventListener('mouseleave', () => {
-        isDragging = false;
+        mouseDown = false;
     });
+
+    // Touch support for mobile
+    renderer.domElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 0) {
+            mouseDown = true;
+            previousMousePosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        }
+    });
+
+    renderer.domElement.addEventListener('touchmove', (e) => {
+        if (mouseDown && e.touches.length > 0) {
+            const deltaX = e.touches[0].clientX - previousMousePosition.x;
+            const deltaY = e.touches[0].clientY - previousMousePosition.y;
+
+            tiltZ -= deltaX * 0.003;
+            tiltX += deltaY * 0.003;
+
+            tiltX = Math.max(-maxTilt, Math.min(maxTilt, tiltX));
+            tiltZ = Math.max(-maxTilt, Math.min(maxTilt, tiltZ));
+
+            previousMousePosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        }
+    });
+
+    renderer.domElement.addEventListener('touchend', () => {
+        mouseDown = false;
+    });
+}
+
+function resetGame() {
+    // Reset tilt angles
+    tiltX = 0;
+    tiltZ = 0;
+
+    // Reset sphere position
+    sphere.reset(labyrinth.getStartPosition());
+
+    // Reset labyrinth rotation
+    labyrinth.resetRotation();
 }
 
 function onWindowResize() {
@@ -132,22 +175,32 @@ function onWindowResize() {
 function animate() {
     animationId = requestAnimationFrame(animate);
 
-    // Update sphere animation
-    if (sphere) {
-        sphere.update();
-    }
-
-    // Update labyrinth animation
+    // Apply tilt to the entire labyrinth
     if (labyrinth) {
-        labyrinth.update();
+        labyrinth.setTilt(tiltX, tiltZ);
     }
 
-    // Update interaction handler
-    if (interactionHandler) {
-        interactionHandler.update();
+    // Update sphere physics
+    if (sphere && labyrinth) {
+        sphere.update(tiltX, tiltZ);
+
+        // Update ball light position
+        if (window.ballLight) {
+            const ballPos = sphere.getPosition();
+            window.ballLight.position.set(ballPos.x, ballPos.y + 10, ballPos.z);
+        }
+
+        // Update UI
+        updateUI();
     }
 
     renderer.render(scene, camera);
+}
+
+function updateUI() {
+    const currentLayer = sphere.getCurrentLayer();
+    document.getElementById('level-counter').textContent =
+        `Current Layer: ${currentLayer} / ${labyrinth.getLayerCount()}`;
 }
 
 // Initialize when page loads

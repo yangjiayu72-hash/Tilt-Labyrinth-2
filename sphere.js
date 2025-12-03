@@ -1,26 +1,19 @@
-// Sphere class - Manages the reflective metal sphere
+// Physics-based Sphere class
 class Sphere {
-    constructor(scene, startPosition) {
+    constructor(scene, startPosition, labyrinth) {
         this.scene = scene;
-        this.radius = 0.9; // 18mm = 1.8cm, scaled to 0.9 units radius
+        this.labyrinth = labyrinth;
+        this.radius = 0.9; // 18mm = 1.8cm diameter, 0.9cm radius
         this.position = startPosition.clone();
         this.velocity = new THREE.Vector3(0, 0, 0);
-        this.isMoving = false;
-        this.isOrbiting = false;
+        this.currentLayer = 0;
+        this.isFalling = false;
 
-        // Movement animation properties
-        this.currentPath = [];
-        this.pathIndex = 0;
-        this.pathProgress = 0;
-        this.movementSpeed = 0.02;
-
-        // Orbit animation properties
-        this.orbitAngle = 0;
-        this.orbitRadius = 12; // 12% of maze size
-        this.orbitLoops = 0;
-        this.orbitTarget = 2; // 2 complete loops
-        this.orbitHeight = 0;
-        this.orbitCenterY = 0;
+        // Physics constants
+        this.gravity = 0.3;
+        this.friction = 0.98;
+        this.bounceDamping = 0.5;
+        this.maxSpeed = 0.8;
 
         this.createSphere();
     }
@@ -31,21 +24,22 @@ class Sphere {
         const material = new THREE.MeshStandardMaterial({
             color: 0xdddddd,
             metalness: 0.95,
-            roughness: 0.05,
+            roughness: 0.08,
             envMapIntensity: 1.5
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.position.copy(this.position);
         this.mesh.castShadow = true;
-        this.mesh.receiveShadow = true;
+        this.mesh.receiveShadow = false;
 
-        // Add subtle glow effect
-        const glowGeometry = new THREE.SphereGeometry(this.radius * 1.1, 16, 16);
+        // Add subtle glow
+        const glowGeometry = new THREE.SphereGeometry(this.radius * 1.15, 16, 16);
         const glowMaterial = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.2
+            opacity: 0.3,
+            side: THREE.BackSide
         });
         this.glow = new THREE.Mesh(glowGeometry, glowMaterial);
         this.mesh.add(this.glow);
@@ -53,195 +47,200 @@ class Sphere {
         this.scene.add(this.mesh);
     }
 
-    // Move sphere along a path with increasing speed
-    moveAlongPath(waypoints, speed = 1.0) {
-        return new Promise((resolve) => {
-            this.currentPath = waypoints;
-            this.pathIndex = 0;
-            this.pathProgress = 0;
-            this.movementSpeed = 0.015 * speed; // Speed increases with each tilt
-            this.isMoving = true;
-
-            const checkComplete = () => {
-                if (!this.isMoving) {
-                    resolve();
-                }
-            };
-
-            this.moveCheckInterval = setInterval(checkComplete, 100);
-        });
-    }
-
-    updateMovement() {
-        if (!this.isMoving || this.currentPath.length === 0) return;
-
-        if (this.pathIndex >= this.currentPath.length - 1) {
-            this.isMoving = false;
-            if (this.moveCheckInterval) {
-                clearInterval(this.moveCheckInterval);
-            }
+    update(tiltX, tiltZ) {
+        if (this.isFalling) {
+            this.updateFalling();
             return;
         }
 
-        const start = this.currentPath[this.pathIndex];
-        const end = this.currentPath[this.pathIndex + 1];
+        // Calculate gravity force based on tilt angles
+        const gravityForce = new THREE.Vector3(
+            Math.sin(tiltZ) * this.gravity,
+            0,
+            Math.sin(tiltX) * this.gravity
+        );
 
-        this.pathProgress += this.movementSpeed;
+        // Apply gravity to velocity
+        this.velocity.add(gravityForce);
 
-        if (this.pathProgress >= 1.0) {
-            this.pathProgress = 0;
-            this.pathIndex++;
+        // Apply friction
+        this.velocity.multiplyScalar(this.friction);
 
-            if (this.pathIndex >= this.currentPath.length - 1) {
-                this.mesh.position.copy(this.currentPath[this.currentPath.length - 1]);
-                this.isMoving = false;
-                if (this.moveCheckInterval) {
-                    clearInterval(this.moveCheckInterval);
-                }
-                return;
-            }
-        } else {
-            // Smooth interpolation with slight easing
-            const eased = this.easeInOutCubic(this.pathProgress);
-            this.mesh.position.lerpVectors(start, end, eased);
-
-            // Add slight rotation as it rolls
-            this.mesh.rotation.x += 0.1;
-            this.mesh.rotation.z += 0.05;
-        }
-    }
-
-    // Launch sphere upward (12%)
-    async launchUp(heightPercent = 12) {
-        return new Promise((resolve) => {
-            const startY = this.mesh.position.y;
-            const targetY = startY + heightPercent;
-            const duration = 400;
-            const startTime = Date.now();
-
-            const animate = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-
-                // Ease out for upward motion
-                const eased = 1 - Math.pow(1 - progress, 2);
-                this.mesh.position.y = startY + (targetY - startY) * eased;
-
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    resolve();
-                }
-            };
-
-            animate();
-        });
-    }
-
-    // Orbit around maze exterior (2 loops at 12% radius)
-    async orbitMaze(loops = 2, radius = 12) {
-        return new Promise((resolve) => {
-            this.isOrbiting = true;
-            this.orbitAngle = 0;
-            this.orbitRadius = radius;
-            this.orbitLoops = 0;
-            this.orbitTarget = loops;
-            this.orbitCenterY = this.mesh.position.y;
-            this.orbitHeight = this.mesh.position.y;
-
-            const checkComplete = () => {
-                if (!this.isOrbiting) {
-                    resolve();
-                }
-            };
-
-            this.orbitCheckInterval = setInterval(checkComplete, 100);
-        });
-    }
-
-    updateOrbit() {
-        if (!this.isOrbiting) return;
-
-        const orbitSpeed = 0.05; // Radians per frame
-        this.orbitAngle += orbitSpeed;
-
-        // Calculate position on circular orbit
-        this.mesh.position.x = Math.cos(this.orbitAngle) * this.orbitRadius;
-        this.mesh.position.z = Math.sin(this.orbitAngle) * this.orbitRadius;
-        this.mesh.position.y = this.orbitHeight;
-
-        // Add slight vertical oscillation
-        this.mesh.position.y += Math.sin(this.orbitAngle * 2) * 0.5;
-
-        // Rotation for visual effect
-        this.mesh.rotation.y += 0.08;
-        this.mesh.rotation.x += 0.05;
-
-        // Check if completed required loops
-        if (this.orbitAngle >= Math.PI * 2 * this.orbitTarget) {
-            this.isOrbiting = false;
-            if (this.orbitCheckInterval) {
-                clearInterval(this.orbitCheckInterval);
-            }
-        }
-    }
-
-    // Settle sphere to center disk
-    async settleToCenter(centerPosition) {
-        return new Promise((resolve) => {
-            const start = this.mesh.position.clone();
-            const end = centerPosition.clone();
-            const duration = 800;
-            const startTime = Date.now();
-
-            const animate = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-
-                // Ease in-out for smooth landing
-                const eased = this.easeInOutCubic(progress);
-                this.mesh.position.lerpVectors(start, end, eased);
-
-                // Slow down rotation
-                this.mesh.rotation.x *= 0.95;
-                this.mesh.rotation.y *= 0.95;
-                this.mesh.rotation.z *= 0.95;
-
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    this.mesh.position.copy(end);
-                    this.mesh.rotation.set(0, 0, 0);
-                    resolve();
-                }
-            };
-
-            animate();
-        });
-    }
-
-    easeInOutCubic(t) {
-        return t < 0.5
-            ? 4 * t * t * t
-            : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    }
-
-    update() {
-        if (this.isMoving) {
-            this.updateMovement();
+        // Limit maximum speed
+        const speed = this.velocity.length();
+        if (speed > this.maxSpeed) {
+            this.velocity.normalize().multiplyScalar(this.maxSpeed);
         }
 
-        if (this.isOrbiting) {
-            this.updateOrbit();
-        }
+        // Calculate new position
+        const newPosition = this.position.clone().add(this.velocity);
 
-        // Update glow pulse
+        // Check collisions with walls
+        const collidedPosition = this.checkWallCollisions(newPosition);
+
+        // Update position
+        this.position.copy(collidedPosition);
+        this.mesh.position.copy(this.getWorldPosition());
+
+        // Add rolling rotation
+        const rotationSpeed = this.velocity.length() * 2;
+        this.mesh.rotation.x += this.velocity.z * rotationSpeed;
+        this.mesh.rotation.z -= this.velocity.x * rotationSpeed;
+
+        // Check if ball is over a hole
+        this.checkHoles();
+
+        // Pulse glow effect
         if (this.glow) {
-            this.glow.material.opacity = 0.15 + Math.sin(Date.now() * 0.003) * 0.05;
+            this.glow.material.opacity = 0.2 + Math.sin(Date.now() * 0.005) * 0.1;
         }
+    }
+
+    checkWallCollisions(newPosition) {
+        const walls = this.labyrinth.getWalls(this.currentLayer);
+        let finalPosition = newPosition.clone();
+
+        walls.forEach(wall => {
+            // Get wall bounding box in world space
+            const wallBox = new THREE.Box3().setFromObject(wall);
+
+            // Transform wall to account for labyrinth rotation
+            const labyrinthRotation = this.labyrinth.group.rotation;
+
+            // Create sphere bounding box
+            const sphereBox = new THREE.Box3().setFromCenterAndSize(
+                new THREE.Vector3(newPosition.x, newPosition.y, newPosition.z),
+                new THREE.Vector3(this.radius * 2, this.radius * 2, this.radius * 2)
+            );
+
+            // Check collision
+            if (wallBox.intersectsBox(sphereBox)) {
+                // Calculate collision normal
+                const wallCenter = new THREE.Vector3();
+                wallBox.getCenter(wallCenter);
+
+                const directionToSphere = new THREE.Vector3()
+                    .subVectors(finalPosition, wallCenter)
+                    .normalize();
+
+                // Reflect velocity
+                const dotProduct = this.velocity.dot(directionToSphere);
+                const reflection = directionToSphere.multiplyScalar(dotProduct * 2);
+                this.velocity.sub(reflection);
+                this.velocity.multiplyScalar(this.bounceDamping);
+
+                // Push sphere out of wall
+                const penetration = this.radius - finalPosition.distanceTo(wallCenter);
+                if (penetration > 0) {
+                    finalPosition.add(
+                        directionToSphere.normalize().multiplyScalar(penetration + 0.1)
+                    );
+                }
+            }
+        });
+
+        // Check boundary walls (keep within maze bounds)
+        const mazeSize = 25;
+        const padding = this.radius + 0.5;
+
+        if (Math.abs(finalPosition.x) > mazeSize - padding) {
+            finalPosition.x = Math.sign(finalPosition.x) * (mazeSize - padding);
+            this.velocity.x *= -this.bounceDamping;
+        }
+
+        if (Math.abs(finalPosition.z) > mazeSize - padding) {
+            finalPosition.z = Math.sign(finalPosition.z) * (mazeSize - padding);
+            this.velocity.z *= -this.bounceDamping;
+        }
+
+        return finalPosition;
+    }
+
+    checkHoles() {
+        if (this.isFalling || this.currentLayer >= this.labyrinth.getLayerCount() - 1) {
+            return;
+        }
+
+        const holes = this.labyrinth.getHoles(this.currentLayer);
+
+        holes.forEach(holePos => {
+            const distance = Math.sqrt(
+                Math.pow(this.position.x - holePos.x, 2) +
+                Math.pow(this.position.z - holePos.z, 2)
+            );
+
+            // If ball center is over hole (with some tolerance)
+            if (distance < 1.2) { // Hole radius is 1.5, ball radius is 0.9
+                this.startFalling();
+            }
+        });
+    }
+
+    startFalling() {
+        if (this.isFalling) return;
+
+        this.isFalling = true;
+        this.fallingStartY = this.mesh.position.y;
+        this.fallingTargetY = this.fallingStartY - this.labyrinth.layerSpacing;
+        this.fallingProgress = 0;
+        this.currentLayer++;
+
+        console.log(`Ball falling to layer ${this.currentLayer + 1}`);
+    }
+
+    updateFalling() {
+        this.fallingProgress += 0.05;
+
+        if (this.fallingProgress >= 1) {
+            // Landing
+            this.isFalling = false;
+            this.fallingProgress = 0;
+
+            // Add landing bounce
+            this.velocity.multiplyScalar(0.5);
+
+            // Update Y position
+            this.position.y = this.radius + (this.currentLayer * -this.labyrinth.layerSpacing);
+            this.mesh.position.y = this.getWorldPosition().y;
+
+            console.log(`Ball landed on layer ${this.currentLayer + 1}`);
+        } else {
+            // Smooth falling animation with easing
+            const eased = 1 - Math.pow(1 - this.fallingProgress, 2);
+            this.mesh.position.y = this.fallingStartY + (this.fallingTargetY - this.fallingStartY) * eased;
+
+            // Add rotation during fall
+            this.mesh.rotation.x += 0.1;
+            this.mesh.rotation.y += 0.08;
+        }
+    }
+
+    getWorldPosition() {
+        // Convert local position to world position accounting for layer
+        const layerY = -this.currentLayer * this.labyrinth.layerSpacing;
+        return new THREE.Vector3(
+            this.position.x,
+            layerY + this.radius,
+            this.position.z
+        );
     }
 
     getPosition() {
         return this.mesh.position.clone();
+    }
+
+    getCurrentLayer() {
+        return this.currentLayer + 1; // Return 1-indexed for display
+    }
+
+    reset(startPosition) {
+        this.position = startPosition.clone();
+        this.velocity.set(0, 0, 0);
+        this.currentLayer = 0;
+        this.isFalling = false;
+        this.mesh.position.copy(this.getWorldPosition());
+        this.mesh.rotation.set(0, 0, 0);
+
+        console.log('Ball reset to start position');
     }
 }

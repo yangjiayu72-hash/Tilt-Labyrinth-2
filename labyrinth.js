@@ -1,124 +1,92 @@
-// Labyrinth class - Creates the 3D maze structure
+// Multi-layer Labyrinth class
 class Labyrinth {
     constructor(scene) {
         this.scene = scene;
         this.group = new THREE.Group();
-        this.walls = [];
-        this.baseY = 0;
-        this.targetY = 0;
-        this.isAnimating = false;
-        this.animationProgress = 0;
+        this.layers = [];
+        this.layerCount = 5;
+        this.layerSpacing = 8; // Vertical spacing between layers
 
-        this.createLabyrinth();
+        this.createLayers();
         scene.add(this.group);
     }
 
-    createLabyrinth() {
-        // Create base platform
-        this.createBasePlatform();
-
-        // Create center target disk
-        this.createCenterDisk();
-
-        // Create maze walls with 6 sides and open top/bottom
-        this.createMazeWalls();
-
-        // Create outer transparent container to show it's floating
-        this.createOuterFrame();
-    }
-
-    createBasePlatform() {
-        const baseGeometry = new THREE.CylinderGeometry(25, 25, 1, 32);
-        const baseMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a2e,
-            metalness: 0.3,
-            roughness: 0.7,
-            transparent: true,
-            opacity: 0.8
-        });
-        const base = new THREE.Mesh(baseGeometry, baseMaterial);
-        base.position.y = -0.5;
-        base.receiveShadow = true;
-        this.group.add(base);
-    }
-
-    createCenterDisk() {
-        const diskGeometry = new THREE.CylinderGeometry(3, 3, 0.5, 32);
-        const diskMaterial = new THREE.MeshStandardMaterial({
-            color: 0x000000,
-            metalness: 0.8,
-            roughness: 0.2,
-            emissive: 0x111111
-        });
-        this.centerDisk = new THREE.Mesh(diskGeometry, diskMaterial);
-        this.centerDisk.position.set(0, 0.25, 0);
-        this.centerDisk.receiveShadow = true;
-        this.group.add(this.centerDisk);
-    }
-
-    createMazeWalls() {
-        const wallHeight = 2;
-        const wallThickness = 0.5;
-        const wallMaterial = new THREE.MeshStandardMaterial({
-            color: 0x667eea,
-            metalness: 0.4,
-            roughness: 0.6,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide
-        });
-
-        // Define wall segments for a spiral path with 4 distinct sections
-        // Each section has 1-2 corners
-        const wallSegments = [
-            // Outer ring - Section 1
-            { start: { x: -20, z: -20 }, end: { x: 20, z: -20 } }, // Bottom wall
-            { start: { x: 20, z: -20 }, end: { x: 20, z: -15 } },  // Right wall segment
-
-            // Section 2 - first turn area
-            { start: { x: -20, z: -20 }, end: { x: -20, z: 20 } }, // Left wall
-            { start: { x: -20, z: 20 }, end: { x: -15, z: 20 } },  // Top wall segment
-
-            // Middle ring - Section 3
-            { start: { x: -15, z: -15 }, end: { x: 15, z: -15 } }, // Middle bottom
-            { start: { x: 15, z: -15 }, end: { x: 15, z: 15 } },   // Middle right
-
-            // Inner ring - Section 4 (leads to center)
-            { start: { x: -10, z: -10 }, end: { x: 10, z: -10 } }, // Inner bottom
-            { start: { x: 10, z: -10 }, end: { x: 10, z: 10 } },   // Inner right
-            { start: { x: -10, z: 10 }, end: { x: 10, z: 10 } },   // Inner top
-
-            // Connecting passages
-            { start: { x: -15, z: 15 }, end: { x: -15, z: -15 } }, // Left connector
-            { start: { x: 15, z: 15 }, end: { x: 10, z: 15 } },    // Top right connector
-            { start: { x: -10, z: -10 }, end: { x: -10, z: 10 } }, // Inner left
+    createLayers() {
+        const colors = [
+            0x667eea, // Purple-blue (Layer 1)
+            0x22aa88, // Teal (Layer 2)
+            0xff6b6b, // Red (Layer 3)
+            0xffa502, // Orange (Layer 4)
+            0x9b59b6  // Purple (Layer 5)
         ];
 
-        wallSegments.forEach((segment, index) => {
-            const wall = this.createWallSegment(
-                segment.start,
-                segment.end,
-                wallHeight,
-                wallThickness,
-                wallMaterial
-            );
-            this.walls.push(wall);
-            this.group.add(wall);
-        });
-
-        // Add some decorative vertical pillars at key corners
-        this.addCornerPillars(wallHeight);
+        // Create 5 layers, each with different maze layout and holes
+        for (let i = 0; i < this.layerCount; i++) {
+            const layer = this.createLayer(i, colors[i]);
+            layer.position.y = -i * this.layerSpacing;
+            this.layers.push(layer);
+            this.group.add(layer);
+        }
     }
 
-    createWallSegment(start, end, height, thickness, material) {
+    createLayer(layerIndex, color) {
+        const layerGroup = new THREE.Group();
+        layerGroup.userData.layerIndex = layerIndex;
+        layerGroup.userData.holes = [];
+
+        // Create base platform with transparency
+        const baseGeometry = new THREE.BoxGeometry(50, 1, 50);
+        const baseMaterial = new THREE.MeshStandardMaterial({
+            color: color,
+            metalness: 0.3,
+            roughness: 0.6,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.receiveShadow = true;
+        base.castShadow = true;
+        layerGroup.add(base);
+
+        // Create walls based on layer index
+        const walls = this.getWallsForLayer(layerIndex);
+        const wallMaterial = new THREE.MeshStandardMaterial({
+            color: this.lightenColor(color, 0.3),
+            metalness: 0.4,
+            roughness: 0.5
+        });
+
+        walls.forEach(wallData => {
+            const wall = this.createWall(wallData, wallMaterial);
+            layerGroup.add(wall);
+        });
+
+        // Create holes (except for the last layer)
+        if (layerIndex < this.layerCount - 1) {
+            const holes = this.getHolesForLayer(layerIndex);
+            holes.forEach(holePos => {
+                const hole = this.createHole(holePos);
+                layerGroup.add(hole);
+                layerGroup.userData.holes.push(holePos);
+            });
+        }
+
+        // Add outer boundary walls (6 sides)
+        this.createBoundaryWalls(layerGroup, wallMaterial);
+
+        return layerGroup;
+    }
+
+    createWall(wallData, material) {
+        const { start, end, height = 2 } = wallData;
         const length = Math.sqrt(
             Math.pow(end.x - start.x, 2) + Math.pow(end.z - start.z, 2)
         );
 
-        const geometry = new THREE.BoxGeometry(length, height, thickness);
+        const geometry = new THREE.BoxGeometry(length, height, 0.6);
         const wall = new THREE.Mesh(geometry, material);
 
-        // Position and rotate wall
         wall.position.x = (start.x + end.x) / 2;
         wall.position.y = height / 2;
         wall.position.z = (start.z + end.z) / 2;
@@ -132,121 +100,174 @@ class Labyrinth {
         return wall;
     }
 
-    addCornerPillars(height) {
-        const pillarGeometry = new THREE.CylinderGeometry(0.8, 0.8, height, 8);
-        const pillarMaterial = new THREE.MeshStandardMaterial({
-            color: 0x764ba2,
-            metalness: 0.6,
-            roughness: 0.4,
-            emissive: 0x221133
-        });
+    createBoundaryWalls(layerGroup, material) {
+        const size = 50;
+        const half = size / 2;
+        const height = 3;
 
-        const pillarPositions = [
-            { x: -20, z: -20 }, // Entrance corner
-            { x: 20, z: -20 },  // Bottom right
-            { x: -20, z: 20 },  // Top left
-            { x: 15, z: 15 },   // Middle
-            { x: -10, z: -10 }, // Inner corner
+        const boundaries = [
+            { start: { x: -half, z: -half }, end: { x: half, z: -half } }, // Front
+            { start: { x: half, z: -half }, end: { x: half, z: half } },   // Right
+            { start: { x: half, z: half }, end: { x: -half, z: half } },   // Back
+            { start: { x: -half, z: half }, end: { x: -half, z: -half } }  // Left
         ];
 
-        pillarPositions.forEach(pos => {
-            const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-            pillar.position.set(pos.x, height / 2, pos.z);
-            pillar.castShadow = true;
-            this.group.add(pillar);
+        boundaries.forEach(boundary => {
+            const wall = this.createWall({ ...boundary, height }, material);
+            layerGroup.add(wall);
         });
     }
 
-    createOuterFrame() {
-        // Create transparent bounding box to show it's a floating 3D structure
-        const frameGeometry = new THREE.BoxGeometry(52, 8, 52);
-        const edgesGeometry = new THREE.EdgesGeometry(frameGeometry);
-        const edgesMaterial = new THREE.LineBasicMaterial({
-            color: 0x4455aa,
+    createHole(position) {
+        const holeRadius = 1.5;
+        const holeGeometry = new THREE.CylinderGeometry(holeRadius, holeRadius, 1.2, 16);
+        const holeMaterial = new THREE.MeshStandardMaterial({
+            color: 0x000000,
+            metalness: 0.8,
+            roughness: 0.2,
+            emissive: 0x111111
+        });
+
+        const hole = new THREE.Mesh(holeGeometry, holeMaterial);
+        hole.position.set(position.x, 0, position.z);
+        hole.userData.isHole = true;
+        hole.userData.radius = holeRadius;
+
+        // Add a glowing ring around the hole
+        const ringGeometry = new THREE.TorusGeometry(holeRadius + 0.2, 0.1, 8, 16);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
             transparent: true,
-            opacity: 0.3,
-            linewidth: 2
+            opacity: 0.6
         });
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 0.6;
+        hole.add(ring);
 
-        const frame = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-        frame.position.y = 2;
-        this.group.add(frame);
+        return hole;
     }
 
-    getEntrancePosition() {
-        // Entrance is at the outer bottom-left area
-        return new THREE.Vector3(-18, 1, -18);
+    getWallsForLayer(layerIndex) {
+        // Different maze patterns for each layer
+        switch (layerIndex) {
+            case 0: // Layer 1 - Simple spiral
+                return [
+                    { start: { x: -20, z: -20 }, end: { x: 15, z: -20 } },
+                    { start: { x: -20, z: -20 }, end: { x: -20, z: 15 } },
+                    { start: { x: -15, z: -10 }, end: { x: 10, z: -10 } },
+                    { start: { x: -15, z: -10 }, end: { x: -15, z: 10 } },
+                    { start: { x: -5, z: 0 }, end: { x: 15, z: 0 } },
+                ];
+            case 1: // Layer 2 - Zigzag pattern
+                return [
+                    { start: { x: -18, z: -15 }, end: { x: 0, z: -15 } },
+                    { start: { x: 0, z: -15 }, end: { x: 0, z: 0 } },
+                    { start: { x: 0, z: 0 }, end: { x: 18, z: 0 } },
+                    { start: { x: 18, z: 0 }, end: { x: 18, z: 15 } },
+                    { start: { x: -10, z: 10 }, end: { x: 10, z: 10 } },
+                ];
+            case 2: // Layer 3 - Cross pattern
+                return [
+                    { start: { x: -20, z: -2 }, end: { x: -5, z: -2 } },
+                    { start: { x: 5, z: -2 }, end: { x: 20, z: -2 } },
+                    { start: { x: -2, z: -20 }, end: { x: -2, z: -5 } },
+                    { start: { x: -2, z: 5 }, end: { x: -2, z: 20 } },
+                    { start: { x: -15, z: -15 }, end: { x: -15, z: -8 } },
+                    { start: { x: 15, z: 15 }, end: { x: 15, z: 8 } },
+                ];
+            case 3: // Layer 4 - Circular pattern
+                return [
+                    { start: { x: -12, z: -12 }, end: { x: 12, z: -12 } },
+                    { start: { x: 12, z: -12 }, end: { x: 12, z: 12 } },
+                    { start: { x: 12, z: 12 }, end: { x: -12, z: 12 } },
+                    { start: { x: -12, z: 12 }, end: { x: -12, z: -12 } },
+                    { start: { x: -6, z: -6 }, end: { x: 6, z: -6 } },
+                ];
+            case 4: // Layer 5 - Final maze (no holes)
+                return [
+                    { start: { x: -15, z: 0 }, end: { x: -5, z: 0 } },
+                    { start: { x: 5, z: 0 }, end: { x: 15, z: 0 } },
+                    { start: { x: 0, z: -15 }, end: { x: 0, z: -5 } },
+                    { start: { x: 0, z: 5 }, end: { x: 0, z: 15 } },
+                ];
+            default:
+                return [];
+        }
     }
 
-    getCenterPosition() {
-        return new THREE.Vector3(0, 1, 0);
+    getHolesForLayer(layerIndex) {
+        // Position holes strategically in each layer
+        switch (layerIndex) {
+            case 0: // Layer 1
+                return [
+                    new THREE.Vector3(10, 0, 10),
+                    new THREE.Vector3(-10, 0, -15)
+                ];
+            case 1: // Layer 2
+                return [
+                    new THREE.Vector3(15, 0, 12),
+                    new THREE.Vector3(-15, 0, 5)
+                ];
+            case 2: // Layer 3
+                return [
+                    new THREE.Vector3(8, 0, -8),
+                    new THREE.Vector3(-8, 0, 15)
+                ];
+            case 3: // Layer 4
+                return [
+                    new THREE.Vector3(0, 0, 0)
+                ];
+            default:
+                return [];
+        }
     }
 
-    // Define the path waypoints for the 4-step journey
-    getPathWaypoints() {
-        return [
-            // Step 1: From entrance to first corner (bottom area)
-            [
-                new THREE.Vector3(-18, 1, -18),
-                new THREE.Vector3(0, 1, -18),
-                new THREE.Vector3(18, 1, -17)
-            ],
-            // Step 2: Around to left side
-            [
-                new THREE.Vector3(18, 1, -17),
-                new THREE.Vector3(18, 1, 0),
-                new THREE.Vector3(-18, 1, 0)
-            ],
-            // Step 3: Through middle section
-            [
-                new THREE.Vector3(-18, 1, 0),
-                new THREE.Vector3(-13, 1, -13),
-                new THREE.Vector3(0, 1, -13),
-                new THREE.Vector3(13, 1, 0)
-            ],
-            // Step 4: Final approach to center
-            [
-                new THREE.Vector3(13, 1, 0),
-                new THREE.Vector3(8, 1, -8),
-                new THREE.Vector3(0, 1, -8),
-                new THREE.Vector3(0, 1, 0)
-            ]
-        ];
+    lightenColor(color, amount) {
+        const c = new THREE.Color(color);
+        c.r = Math.min(1, c.r + amount);
+        c.g = Math.min(1, c.g + amount);
+        c.b = Math.min(1, c.b + amount);
+        return c.getHex();
     }
 
-    // Animate maze drop (8% down)
-    dropMaze(duration = 800, delay = 200) {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                this.isAnimating = true;
-                this.animationProgress = 0;
-                this.targetY = -this.group.position.y - 8; // 8% of approximate height
-                const startY = this.group.position.y;
-                const startTime = Date.now();
+    getStartPosition() {
+        // Start position on the first layer
+        return new THREE.Vector3(-22, 1, -22);
+    }
 
-                const animate = () => {
-                    const elapsed = Date.now() - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
+    getLayerCount() {
+        return this.layerCount;
+    }
 
-                    // Easing function (ease-out)
-                    const eased = 1 - Math.pow(1 - progress, 3);
+    getLayer(index) {
+        return this.layers[index];
+    }
 
-                    this.group.position.y = startY + (this.targetY * eased);
+    getWalls(layerIndex) {
+        const layer = this.layers[layerIndex];
+        if (!layer) return [];
 
-                    if (progress < 1) {
-                        requestAnimationFrame(animate);
-                    } else {
-                        this.isAnimating = false;
-                        resolve();
-                    }
-                };
-
-                animate();
-            }, delay);
+        const walls = [];
+        layer.children.forEach(child => {
+            if (child.geometry && child.geometry.type === 'BoxGeometry') {
+                walls.push(child);
+            }
         });
+        return walls;
     }
 
-    update() {
-        // Animation updates handled in dropMaze
+    getHoles(layerIndex) {
+        const layer = this.layers[layerIndex];
+        return layer ? layer.userData.holes : [];
+    }
+
+    setTilt(tiltX, tiltZ) {
+        this.group.rotation.x = tiltX;
+        this.group.rotation.z = tiltZ;
+    }
+
+    resetRotation() {
+        this.group.rotation.set(0, 0, 0);
     }
 }
