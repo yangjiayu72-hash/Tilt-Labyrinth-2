@@ -9,11 +9,11 @@ class Sphere {
         this.currentLayer = 0;
         this.isFalling = false;
 
-        // Physics constants
-        this.gravity = 0.3;
-        this.friction = 0.98;
-        this.bounceDamping = 0.5;
-        this.maxSpeed = 0.8;
+        // Physics constants - tuned for stability
+        this.gravity = 0.15; // Reduced for more control
+        this.friction = 0.96; // Increased friction
+        this.bounceDamping = 0.3; // More damping
+        this.maxSpeed = 0.5; // Lower max speed
 
         this.createSphere();
     }
@@ -53,7 +53,7 @@ class Sphere {
             return;
         }
 
-        // Calculate gravity force based on tilt angles
+        // Calculate gravity force based on tilt angles (much gentler)
         const gravityForce = new THREE.Vector3(
             Math.sin(tiltZ) * this.gravity,
             0,
@@ -72,11 +72,14 @@ class Sphere {
             this.velocity.normalize().multiplyScalar(this.maxSpeed);
         }
 
+        // Store old position for collision recovery
+        const oldPosition = this.position.clone();
+
         // Calculate new position
         const newPosition = this.position.clone().add(this.velocity);
 
-        // Check collisions with walls
-        const collidedPosition = this.checkWallCollisions(newPosition);
+        // Check collisions with walls - now properly prevents passing through
+        const collidedPosition = this.checkWallCollisions(oldPosition, newPosition);
 
         // Update position
         this.position.copy(collidedPosition);
@@ -96,64 +99,126 @@ class Sphere {
         }
     }
 
-    checkWallCollisions(newPosition) {
+    checkWallCollisions(oldPosition, newPosition) {
         const walls = this.labyrinth.getWalls(this.currentLayer);
         let finalPosition = newPosition.clone();
+        let hasCollision = false;
 
+        // Check each wall for collision
         walls.forEach(wall => {
-            // Get wall bounding box in world space
-            const wallBox = new THREE.Box3().setFromObject(wall);
-
-            // Transform wall to account for labyrinth rotation
-            const labyrinthRotation = this.labyrinth.group.rotation;
-
-            // Create sphere bounding box
-            const sphereBox = new THREE.Box3().setFromCenterAndSize(
-                new THREE.Vector3(newPosition.x, newPosition.y, newPosition.z),
-                new THREE.Vector3(this.radius * 2, this.radius * 2, this.radius * 2)
-            );
-
-            // Check collision
-            if (wallBox.intersectsBox(sphereBox)) {
-                // Calculate collision normal
-                const wallCenter = new THREE.Vector3();
-                wallBox.getCenter(wallCenter);
-
-                const directionToSphere = new THREE.Vector3()
-                    .subVectors(finalPosition, wallCenter)
-                    .normalize();
-
-                // Reflect velocity
-                const dotProduct = this.velocity.dot(directionToSphere);
-                const reflection = directionToSphere.multiplyScalar(dotProduct * 2);
-                this.velocity.sub(reflection);
-                this.velocity.multiplyScalar(this.bounceDamping);
-
-                // Push sphere out of wall
-                const penetration = this.radius - finalPosition.distanceTo(wallCenter);
-                if (penetration > 0) {
-                    finalPosition.add(
-                        directionToSphere.normalize().multiplyScalar(penetration + 0.1)
-                    );
-                }
+            const collision = this.checkWallCollision(finalPosition, wall);
+            if (collision.hasCollision) {
+                hasCollision = true;
+                finalPosition.copy(collision.position);
+                this.velocity.copy(collision.velocity);
             }
         });
 
-        // Check boundary walls (keep within maze bounds)
+        // Check boundary walls more strictly
         const mazeSize = 25;
-        const padding = this.radius + 0.5;
+        const padding = this.radius + 0.3;
 
         if (Math.abs(finalPosition.x) > mazeSize - padding) {
             finalPosition.x = Math.sign(finalPosition.x) * (mazeSize - padding);
             this.velocity.x *= -this.bounceDamping;
+            hasCollision = true;
         }
 
         if (Math.abs(finalPosition.z) > mazeSize - padding) {
             finalPosition.z = Math.sign(finalPosition.z) * (mazeSize - padding);
             this.velocity.z *= -this.bounceDamping;
+            hasCollision = true;
         }
 
         return finalPosition;
+    }
+
+    checkWallCollision(spherePos, wall) {
+        // Get wall properties
+        const wallPos = wall.position;
+        const wallRot = wall.rotation;
+
+        // Get wall dimensions
+        const wallGeometry = wall.geometry;
+        const wallWidth = wallGeometry.parameters.width;
+        const wallHeight = wallGeometry.parameters.height;
+        const wallDepth = wallGeometry.parameters.depth;
+
+        // Transform sphere position to wall's local space
+        const localSpherePos = new THREE.Vector3()
+            .subVectors(spherePos, wallPos)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), -wallRot.y);
+
+        // Calculate closest point on the wall (box) to the sphere
+        const closestX = Math.max(-wallWidth / 2, Math.min(wallWidth / 2, localSpherePos.x));
+        const closestY = Math.max(-wallHeight / 2, Math.min(wallHeight / 2, localSpherePos.y));
+        const closestZ = Math.max(-wallDepth / 2, Math.min(wallDepth / 2, localSpherePos.z));
+
+        const closestPoint = new THREE.Vector3(closestX, closestY, closestZ);
+
+        // Distance from sphere to closest point
+        const distance = localSpherePos.distanceTo(closestPoint);
+
+        // Check if there's a collision
+        if (distance < this.radius) {
+            // Calculate collision normal in local space
+            const normal = new THREE.Vector3()
+                .subVectors(localSpherePos, closestPoint)
+                .normalize();
+
+            // If distance is too small, use a default normal
+            if (distance < 0.01) {
+                // Ball is inside wall, push it out based on which face is closest
+                const distances = [
+                    Math.abs(localSpherePos.x - wallWidth / 2),
+                    Math.abs(localSpherePos.x + wallWidth / 2),
+                    Math.abs(localSpherePos.z - wallDepth / 2),
+                    Math.abs(localSpherePos.z + wallDepth / 2)
+                ];
+                const minIndex = distances.indexOf(Math.min(...distances));
+
+                if (minIndex === 0) normal.set(1, 0, 0);
+                else if (minIndex === 1) normal.set(-1, 0, 0);
+                else if (minIndex === 2) normal.set(0, 0, 1);
+                else normal.set(0, 0, -1);
+            }
+
+            // Transform normal back to world space
+            const worldNormal = normal.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRot.y);
+
+            // Calculate penetration depth
+            const penetration = this.radius - distance;
+
+            // Push sphere out of wall
+            const correctedPos = spherePos.clone().add(
+                worldNormal.multiplyScalar(penetration + 0.05)
+            );
+
+            // Reflect velocity
+            const velocityDotNormal = this.velocity.dot(worldNormal);
+
+            // Only reflect if moving towards the wall
+            if (velocityDotNormal < 0) {
+                const reflection = worldNormal.multiplyScalar(velocityDotNormal * 2);
+                const newVelocity = this.velocity.clone().sub(reflection);
+                newVelocity.multiplyScalar(this.bounceDamping);
+
+                return {
+                    hasCollision: true,
+                    position: correctedPos,
+                    velocity: newVelocity
+                };
+            } else {
+                // Moving away from wall, just correct position
+                return {
+                    hasCollision: true,
+                    position: correctedPos,
+                    velocity: this.velocity.clone().multiplyScalar(0.8)
+                };
+            }
+        }
+
+        return { hasCollision: false };
     }
 
     checkHoles() {
@@ -170,7 +235,7 @@ class Sphere {
             );
 
             // If ball center is over hole (with some tolerance)
-            if (distance < 1.2) { // Hole radius is 1.5, ball radius is 0.9
+            if (distance < 1.0) { // Tighter tolerance
                 this.startFalling();
             }
         });
@@ -196,8 +261,8 @@ class Sphere {
             this.isFalling = false;
             this.fallingProgress = 0;
 
-            // Add landing bounce
-            this.velocity.multiplyScalar(0.5);
+            // Reduce velocity on landing
+            this.velocity.multiplyScalar(0.4);
 
             // Update Y position
             this.position.y = this.radius + (this.currentLayer * -this.labyrinth.layerSpacing);
