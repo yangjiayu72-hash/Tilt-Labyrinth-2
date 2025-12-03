@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Tilt Labyrinth</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="container"></div>
+    <div id="instructions">
+        <h2>3D Tilt Labyrinth</h2>
+        <p>Click on the maze to tilt and guide the sphere to the center.</p>
+        <p id="tilt-counter">Tilts: 0 / 4</p>
+        <div id="tilt-buttons">
+            <button id="tilt-btn" class="tilt-button">TILT</button>
+        </div>
+        <p class="hint">The sphere will reach the center on the 4th tilt!</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="labyrinth.js"></script>
+    <script src="sphere.js"></script>
+    <script src="interactions.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

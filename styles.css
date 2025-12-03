@@ -1,0 +1,96 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    overflow: hidden;
+    color: #fff;
+}
+
+#container {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+}
+
+#instructions {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 20px 30px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 350px;
+}
+
+#instructions h2 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+#instructions p {
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 10px;
+    color: #ddd;
+}
+
+#tilt-counter {
+    font-size: 18px;
+    font-weight: bold;
+    color: #667eea;
+    margin: 15px 0;
+    text-align: center;
+}
+
+#tilt-buttons {
+    display: flex;
+    justify-content: center;
+    margin: 15px 0;
+}
+
+.tilt-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 32px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.tilt-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.tilt-button:active {
+    transform: translateY(0);
+}
+
+.tilt-button:disabled {
+    background: linear-gradient(135deg, #555 0%, #666 100%);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.hint {
+    font-size: 12px;
+    font-style: italic;
+    color: #aaa;
+    text-align: center;
+}
