@@ -72,17 +72,26 @@ class Sphere {
             this.velocity.normalize().multiplyScalar(this.maxSpeed);
         }
 
-        // Store old position for collision recovery
-        const oldPosition = this.position.clone();
+        // Use substeps for more accurate collision detection
+        // This prevents tunneling through walls at high speeds
+        const substeps = 3;
+        const subVelocity = this.velocity.clone().multiplyScalar(1 / substeps);
 
-        // Calculate new position
-        const newPosition = this.position.clone().add(this.velocity);
+        for (let i = 0; i < substeps; i++) {
+            // Store old position for collision recovery
+            const oldPosition = this.position.clone();
 
-        // Check collisions with walls - now properly prevents passing through
-        const collidedPosition = this.checkWallCollisions(oldPosition, newPosition);
+            // Calculate new position with substep
+            const newPosition = this.position.clone().add(subVelocity);
 
-        // Update position
-        this.position.copy(collidedPosition);
+            // Check collisions with walls - multi-iteration for robust collision
+            const collidedPosition = this.checkWallCollisionsMultiPass(oldPosition, newPosition);
+
+            // Update position
+            this.position.copy(collidedPosition);
+        }
+
+        // Update mesh position
         this.mesh.position.copy(this.getWorldPosition());
 
         // Add rolling rotation
@@ -97,6 +106,30 @@ class Sphere {
         if (this.glow) {
             this.glow.material.opacity = 0.2 + Math.sin(Date.now() * 0.005) * 0.1;
         }
+    }
+
+    checkWallCollisionsMultiPass(oldPosition, newPosition) {
+        // Multi-pass collision resolution for robust wall collision
+        // This handles corner cases and multiple simultaneous collisions
+        const maxIterations = 4;
+        let finalPosition = newPosition.clone();
+
+        for (let iteration = 0; iteration < maxIterations; iteration++) {
+            let hadCollision = false;
+            const iterationResult = this.checkWallCollisions(oldPosition, finalPosition);
+
+            if (iterationResult.hadCollision) {
+                finalPosition = iterationResult.position;
+                hadCollision = true;
+            }
+
+            // If no collision in this iteration, we're done
+            if (!hadCollision) {
+                break;
+            }
+        }
+
+        return finalPosition;
     }
 
     checkWallCollisions(oldPosition, newPosition) {
@@ -130,7 +163,10 @@ class Sphere {
             hasCollision = true;
         }
 
-        return finalPosition;
+        return {
+            position: finalPosition,
+            hadCollision: hasCollision
+        };
     }
 
     checkWallCollision(spherePos, wall) {
@@ -159,14 +195,15 @@ class Sphere {
         // Distance from sphere to closest point
         const distance = localSpherePos.distanceTo(closestPoint);
 
-        // Check if there's a collision
-        if (distance < this.radius) {
-            // Calculate collision normal in local space
-            const normal = new THREE.Vector3()
-                .subVectors(localSpherePos, closestPoint)
-                .normalize();
+        // Add a small safety margin to collision radius
+        const collisionRadius = this.radius + 0.05;
 
-            // If distance is too small, use a default normal
+        // Check if there's a collision
+        if (distance < collisionRadius) {
+            // Calculate collision normal in local space
+            let normal = new THREE.Vector3();
+
+            // If distance is very small, ball is deep inside wall
             if (distance < 0.01) {
                 // Ball is inside wall, push it out based on which face is closest
                 const distances = [
@@ -181,17 +218,21 @@ class Sphere {
                 else if (minIndex === 1) normal.set(-1, 0, 0);
                 else if (minIndex === 2) normal.set(0, 0, 1);
                 else normal.set(0, 0, -1);
+            } else {
+                // Normal collision - calculate proper normal
+                normal.subVectors(localSpherePos, closestPoint).normalize();
             }
 
             // Transform normal back to world space
             const worldNormal = normal.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), wallRot.y);
 
-            // Calculate penetration depth
-            const penetration = this.radius - distance;
+            // Calculate penetration depth with safety margin
+            const penetration = collisionRadius - distance;
 
-            // Push sphere out of wall
+            // Push sphere out of wall with extra safety margin
+            const pushDistance = penetration + 0.1;
             const correctedPos = spherePos.clone().add(
-                worldNormal.multiplyScalar(penetration + 0.05)
+                worldNormal.clone().multiplyScalar(pushDistance)
             );
 
             // Reflect velocity
@@ -199,7 +240,7 @@ class Sphere {
 
             // Only reflect if moving towards the wall
             if (velocityDotNormal < 0) {
-                const reflection = worldNormal.multiplyScalar(velocityDotNormal * 2);
+                const reflection = worldNormal.clone().multiplyScalar(velocityDotNormal * 2);
                 const newVelocity = this.velocity.clone().sub(reflection);
                 newVelocity.multiplyScalar(this.bounceDamping);
 
@@ -209,7 +250,7 @@ class Sphere {
                     velocity: newVelocity
                 };
             } else {
-                // Moving away from wall, just correct position
+                // Moving away from wall, just correct position and reduce velocity
                 return {
                     hasCollision: true,
                     position: correctedPos,
