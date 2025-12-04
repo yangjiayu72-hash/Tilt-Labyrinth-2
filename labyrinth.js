@@ -1,81 +1,87 @@
-// Multi-layer Labyrinth class
+// Cube Maze Labyrinth class - 6 faces forming a cube
 class Labyrinth {
     constructor(scene) {
         this.scene = scene;
         this.group = new THREE.Group();
-        this.layers = [];
-        this.layerCount = 5;
-        this.layerSpacing = 8; // Vertical spacing between layers
+        this.faces = {};
+        this.faceSize = 30; // Size of each cube face
 
-        this.createLayers();
+        this.createCubeFaces();
         scene.add(this.group);
     }
 
-    createLayers() {
-        const colors = [
-            0x667eea, // Purple-blue (Layer 1)
-            0x22aa88, // Teal (Layer 2)
-            0xff6b6b, // Red (Layer 3)
-            0xffa502, // Orange (Layer 4)
-            0x9b59b6  // Purple (Layer 5)
-        ];
+    createCubeFaces() {
+        const colors = {
+            top: 0x667eea,    // Purple-blue
+            bottom: 0x9b59b6, // Purple
+            front: 0x22aa88,  // Teal
+            back: 0xff6b6b,   // Red
+            left: 0xffa502,   // Orange
+            right: 0x3498db   // Blue
+        };
 
-        // Create 5 layers, each with different maze layout and holes
-        for (let i = 0; i < this.layerCount; i++) {
-            const layer = this.createLayer(i, colors[i]);
-            layer.position.y = -i * this.layerSpacing;
-            this.layers.push(layer);
-            this.group.add(layer);
-        }
+        // Create each face of the cube
+        this.faces.top = this.createFace('top', colors.top,
+            new THREE.Vector3(0, this.faceSize / 2, 0),
+            new THREE.Euler(0, 0, 0));
+
+        this.faces.bottom = this.createFace('bottom', colors.bottom,
+            new THREE.Vector3(0, -this.faceSize / 2, 0),
+            new THREE.Euler(Math.PI, 0, 0));
+
+        this.faces.front = this.createFace('front', colors.front,
+            new THREE.Vector3(0, 0, this.faceSize / 2),
+            new THREE.Euler(-Math.PI / 2, 0, 0));
+
+        this.faces.back = this.createFace('back', colors.back,
+            new THREE.Vector3(0, 0, -this.faceSize / 2),
+            new THREE.Euler(Math.PI / 2, 0, 0));
+
+        this.faces.left = this.createFace('left', colors.left,
+            new THREE.Vector3(-this.faceSize / 2, 0, 0),
+            new THREE.Euler(0, 0, Math.PI / 2));
+
+        this.faces.right = this.createFace('right', colors.right,
+            new THREE.Vector3(this.faceSize / 2, 0, 0),
+            new THREE.Euler(0, 0, -Math.PI / 2));
     }
 
-    createLayer(layerIndex, color) {
-        const layerGroup = new THREE.Group();
-        layerGroup.userData.layerIndex = layerIndex;
-        layerGroup.userData.holes = [];
+    createFace(faceName, color, position, rotation) {
+        const faceGroup = new THREE.Group();
+        faceGroup.userData.faceName = faceName;
+        faceGroup.position.copy(position);
+        faceGroup.rotation.copy(rotation);
 
-        // Create base platform with transparency
-        const baseGeometry = new THREE.BoxGeometry(50, 1, 50);
+        // Create base platform
+        const baseGeometry = new THREE.BoxGeometry(this.faceSize, 0.5, this.faceSize);
         const baseMaterial = new THREE.MeshStandardMaterial({
             color: color,
             metalness: 0.3,
             roughness: 0.6,
             transparent: true,
-            opacity: 0.7,
+            opacity: 0.8,
             side: THREE.DoubleSide
         });
         const base = new THREE.Mesh(baseGeometry, baseMaterial);
         base.receiveShadow = true;
         base.castShadow = true;
-        layerGroup.add(base);
+        faceGroup.add(base);
 
-        // Create walls based on layer index
-        const walls = this.getWallsForLayer(layerIndex);
+        // Create walls for this face
         const wallMaterial = new THREE.MeshStandardMaterial({
             color: this.lightenColor(color, 0.3),
             metalness: 0.4,
             roughness: 0.5
         });
 
+        const walls = this.getWallsForFace(faceName);
         walls.forEach(wallData => {
             const wall = this.createWall(wallData, wallMaterial);
-            layerGroup.add(wall);
+            faceGroup.add(wall);
         });
 
-        // Create holes (except for the last layer)
-        if (layerIndex < this.layerCount - 1) {
-            const holes = this.getHolesForLayer(layerIndex);
-            holes.forEach(holePos => {
-                const hole = this.createHole(holePos);
-                layerGroup.add(hole);
-                layerGroup.userData.holes.push(holePos);
-            });
-        }
-
-        // Add outer boundary walls (6 sides)
-        this.createBoundaryWalls(layerGroup, wallMaterial);
-
-        return layerGroup;
+        this.group.add(faceGroup);
+        return faceGroup;
     }
 
     createWall(wallData, material) {
@@ -84,11 +90,11 @@ class Labyrinth {
             Math.pow(end.x - start.x, 2) + Math.pow(end.z - start.z, 2)
         );
 
-        const geometry = new THREE.BoxGeometry(length, height, 0.6);
+        const geometry = new THREE.BoxGeometry(length, height, 0.4);
         const wall = new THREE.Mesh(geometry, material);
 
         wall.position.x = (start.x + end.x) / 2;
-        wall.position.y = height / 2;
+        wall.position.y = height / 2 + 0.25; // Offset from base
         wall.position.z = (start.z + end.z) / 2;
 
         const angle = Math.atan2(end.z - start.z, end.x - start.x);
@@ -100,124 +106,58 @@ class Labyrinth {
         return wall;
     }
 
-    createBoundaryWalls(layerGroup, material) {
-        const size = 50;
-        const half = size / 2;
-        const height = 3;
+    getWallsForFace(faceName) {
+        const half = this.faceSize / 2;
 
-        const boundaries = [
-            { start: { x: -half, z: -half }, end: { x: half, z: -half } }, // Front
-            { start: { x: half, z: -half }, end: { x: half, z: half } },   // Right
-            { start: { x: half, z: half }, end: { x: -half, z: half } },   // Back
-            { start: { x: -half, z: half }, end: { x: -half, z: -half } }  // Left
-        ];
-
-        boundaries.forEach(boundary => {
-            const wall = this.createWall({ ...boundary, height }, material);
-            layerGroup.add(wall);
-        });
-    }
-
-    createHole(position) {
-        const holeRadius = 1.5;
-        const holeGeometry = new THREE.CylinderGeometry(holeRadius, holeRadius, 1.2, 16);
-        const holeMaterial = new THREE.MeshStandardMaterial({
-            color: 0x000000,
-            metalness: 0.8,
-            roughness: 0.2,
-            emissive: 0x111111
-        });
-
-        const hole = new THREE.Mesh(holeGeometry, holeMaterial);
-        hole.position.set(position.x, 0, position.z);
-        hole.userData.isHole = true;
-        hole.userData.radius = holeRadius;
-
-        // Add a glowing ring around the hole
-        const ringGeometry = new THREE.TorusGeometry(holeRadius + 0.2, 0.1, 8, 16);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.6
-        });
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = 0.6;
-        hole.add(ring);
-
-        return hole;
-    }
-
-    getWallsForLayer(layerIndex) {
-        // Different maze patterns for each layer
-        switch (layerIndex) {
-            case 0: // Layer 1 - Simple spiral
+        switch (faceName) {
+            case 'top': // Top face - simple cross pattern
                 return [
-                    { start: { x: -20, z: -20 }, end: { x: 15, z: -20 } },
-                    { start: { x: -20, z: -20 }, end: { x: -20, z: 15 } },
-                    { start: { x: -15, z: -10 }, end: { x: 10, z: -10 } },
-                    { start: { x: -15, z: -10 }, end: { x: -15, z: 10 } },
-                    { start: { x: -5, z: 0 }, end: { x: 15, z: 0 } },
-                ];
-            case 1: // Layer 2 - Zigzag pattern
-                return [
-                    { start: { x: -18, z: -15 }, end: { x: 0, z: -15 } },
-                    { start: { x: 0, z: -15 }, end: { x: 0, z: 0 } },
-                    { start: { x: 0, z: 0 }, end: { x: 18, z: 0 } },
-                    { start: { x: 18, z: 0 }, end: { x: 18, z: 15 } },
+                    { start: { x: -10, z: -10 }, end: { x: 10, z: -10 } },
                     { start: { x: -10, z: 10 }, end: { x: 10, z: 10 } },
+                    { start: { x: 0, z: -half + 5 }, end: { x: 0, z: -5 } },
+                    { start: { x: 0, z: 5 }, end: { x: 0, z: half - 5 } },
                 ];
-            case 2: // Layer 3 - Cross pattern
-                return [
-                    { start: { x: -20, z: -2 }, end: { x: -5, z: -2 } },
-                    { start: { x: 5, z: -2 }, end: { x: 20, z: -2 } },
-                    { start: { x: -2, z: -20 }, end: { x: -2, z: -5 } },
-                    { start: { x: -2, z: 5 }, end: { x: -2, z: 20 } },
-                    { start: { x: -15, z: -15 }, end: { x: -15, z: -8 } },
-                    { start: { x: 15, z: 15 }, end: { x: 15, z: 8 } },
-                ];
-            case 3: // Layer 4 - Circular pattern
-                return [
-                    { start: { x: -12, z: -12 }, end: { x: 12, z: -12 } },
-                    { start: { x: 12, z: -12 }, end: { x: 12, z: 12 } },
-                    { start: { x: 12, z: 12 }, end: { x: -12, z: 12 } },
-                    { start: { x: -12, z: 12 }, end: { x: -12, z: -12 } },
-                    { start: { x: -6, z: -6 }, end: { x: 6, z: -6 } },
-                ];
-            case 4: // Layer 5 - Final maze (no holes)
-                return [
-                    { start: { x: -15, z: 0 }, end: { x: -5, z: 0 } },
-                    { start: { x: 5, z: 0 }, end: { x: 15, z: 0 } },
-                    { start: { x: 0, z: -15 }, end: { x: 0, z: -5 } },
-                    { start: { x: 0, z: 5 }, end: { x: 0, z: 15 } },
-                ];
-            default:
-                return [];
-        }
-    }
 
-    getHolesForLayer(layerIndex) {
-        // Position holes strategically in each layer
-        switch (layerIndex) {
-            case 0: // Layer 1
+            case 'front': // Front face - zigzag
                 return [
-                    new THREE.Vector3(10, 0, 10),
-                    new THREE.Vector3(-10, 0, -15)
+                    { start: { x: -12, z: -10 }, end: { x: 0, z: -10 } },
+                    { start: { x: 0, z: -10 }, end: { x: 0, z: 0 } },
+                    { start: { x: 0, z: 0 }, end: { x: 12, z: 0 } },
+                    { start: { x: 12, z: 0 }, end: { x: 12, z: 10 } },
                 ];
-            case 1: // Layer 2
+
+            case 'right': // Right face - spiral
                 return [
-                    new THREE.Vector3(15, 0, 12),
-                    new THREE.Vector3(-15, 0, 5)
+                    { start: { x: -12, z: -12 }, end: { x: 8, z: -12 } },
+                    { start: { x: -12, z: -12 }, end: { x: -12, z: 8 } },
+                    { start: { x: -8, z: -6 }, end: { x: 6, z: -6 } },
+                    { start: { x: -8, z: -6 }, end: { x: -8, z: 6 } },
                 ];
-            case 2: // Layer 3
+
+            case 'back': // Back face - rooms
                 return [
-                    new THREE.Vector3(8, 0, -8),
-                    new THREE.Vector3(-8, 0, 15)
+                    { start: { x: -10, z: -2 }, end: { x: -3, z: -2 } },
+                    { start: { x: 3, z: -2 }, end: { x: 10, z: -2 } },
+                    { start: { x: -2, z: -12 }, end: { x: -2, z: -4 } },
+                    { start: { x: -2, z: 4 }, end: { x: -2, z: 12 } },
                 ];
-            case 3: // Layer 4
+
+            case 'left': // Left face - maze
                 return [
-                    new THREE.Vector3(0, 0, 0)
+                    { start: { x: -10, z: -10 }, end: { x: 10, z: -10 } },
+                    { start: { x: 10, z: -10 }, end: { x: 10, z: 0 } },
+                    { start: { x: -10, z: 0 }, end: { x: 5, z: 0 } },
+                    { start: { x: -5, z: 5 }, end: { x: 10, z: 5 } },
                 ];
+
+            case 'bottom': // Bottom face - circular
+                return [
+                    { start: { x: -8, z: -8 }, end: { x: 8, z: -8 } },
+                    { start: { x: 8, z: -8 }, end: { x: 8, z: 8 } },
+                    { start: { x: 8, z: 8 }, end: { x: -8, z: 8 } },
+                    { start: { x: -8, z: 8 }, end: { x: -8, z: -8 } },
+                ];
+
             default:
                 return [];
         }
@@ -232,34 +172,57 @@ class Labyrinth {
     }
 
     getStartPosition() {
-        // Start position on the first layer
-        return new THREE.Vector3(-22, 1, -22);
+        // Start position on top face
+        return new THREE.Vector3(-12, 0.9, -12);
     }
 
-    getLayerCount() {
-        return this.layerCount;
+    getStartFace() {
+        return 'top';
     }
 
-    getLayer(index) {
-        return this.layers[index];
+    getFace(faceName) {
+        return this.faces[faceName];
     }
 
-    getWalls(layerIndex) {
-        const layer = this.layers[layerIndex];
-        if (!layer) return [];
+    getWalls(faceName) {
+        const face = this.faces[faceName];
+        if (!face) return [];
 
         const walls = [];
-        layer.children.forEach(child => {
-            if (child.geometry && child.geometry.type === 'BoxGeometry') {
+        face.children.forEach(child => {
+            if (child.geometry && child.geometry.type === 'BoxGeometry' &&
+                child.geometry.parameters.depth === 0.4) { // Wall thickness
                 walls.push(child);
             }
         });
         return walls;
     }
 
-    getHoles(layerIndex) {
-        const layer = this.layers[layerIndex];
-        return layer ? layer.userData.holes : [];
+    // Get the adjacent face when crossing an edge
+    getAdjacentFace(currentFace, edge) {
+        const adjacency = {
+            top: { north: 'back', south: 'front', east: 'right', west: 'left' },
+            bottom: { north: 'front', south: 'back', east: 'right', west: 'left' },
+            front: { north: 'top', south: 'bottom', east: 'right', west: 'left' },
+            back: { north: 'bottom', south: 'top', east: 'right', west: 'left' },
+            left: { north: 'top', south: 'bottom', east: 'front', west: 'back' },
+            right: { north: 'top', south: 'bottom', east: 'back', west: 'front' }
+        };
+
+        return adjacency[currentFace]?.[edge] || currentFace;
+    }
+
+    // Get gravity direction for a face (in world coordinates)
+    getGravityDirection(faceName) {
+        const directions = {
+            top: new THREE.Vector3(0, -1, 0),
+            bottom: new THREE.Vector3(0, 1, 0),
+            front: new THREE.Vector3(0, 0, -1),
+            back: new THREE.Vector3(0, 0, 1),
+            left: new THREE.Vector3(1, 0, 0),
+            right: new THREE.Vector3(-1, 0, 0)
+        };
+        return directions[faceName] || new THREE.Vector3(0, -1, 0);
     }
 
     setTilt(tiltX, tiltZ) {

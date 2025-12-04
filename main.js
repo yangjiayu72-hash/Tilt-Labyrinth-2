@@ -15,10 +15,10 @@ function init() {
     scene.background = new THREE.Color(0x0a0a1a);
     scene.fog = new THREE.Fog(0x0a0a1a, 100, 300);
 
-    // Create camera
+    // Create camera - positioned to view the cube
     const aspect = window.innerWidth / window.innerHeight;
     camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-    camera.position.set(0, 80, 80);
+    camera.position.set(50, 50, 50);
     camera.lookAt(0, 0, 0);
 
     // Create renderer
@@ -35,10 +35,10 @@ function init() {
     // Add lights
     setupLights();
 
-    // Create multi-layer labyrinth
+    // Create cube maze labyrinth
     labyrinth = new Labyrinth(scene);
 
-    // Create sphere at entrance of first layer
+    // Create sphere at start position on top face
     sphere = new Sphere(scene, labyrinth.getStartPosition(), labyrinth);
 
     // Setup mouse controls for tilting
@@ -198,9 +198,9 @@ function animate() {
 }
 
 function updateUI() {
-    const currentLayer = sphere.getCurrentLayer();
+    const currentFace = sphere.getCurrentFace();
     document.getElementById('level-counter').textContent =
-        `Current Layer: ${currentLayer} / ${labyrinth.getLayerCount()}`;
+        `Current Face: ${currentFace.toUpperCase()}`;
 }
 
 // Initialize when page loads
