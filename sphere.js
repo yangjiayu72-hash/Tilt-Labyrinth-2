@@ -99,8 +99,8 @@ class Sphere {
         this.mesh.rotation.x += this.velocity.z * rotationSpeed;
         this.mesh.rotation.z -= this.velocity.x * rotationSpeed;
 
-        // Check if ball is over a hole
-        this.checkHoles();
+        // Note: Hole checking disabled - sphere stays on same plane
+        // this.checkHoles();
 
         // Pulse glow effect
         if (this.glow) {
